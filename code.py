@@ -1,6 +1,5 @@
 # Modified/adapted/start from: https://learn.adafruit.com/adafruit-matrixportal-m4
 
-import gc
 import time
 import board
 import busio
@@ -18,6 +17,12 @@ from adafruit_bitmap_font import bitmap_font
 
 DEVICECONFIG = "DJ" # use LK for Lui and Ken's board
 print("Starting " + DEVICECONFIG + " Board...") 
+
+colorBlue = 0x6699CC #blue
+colorYellow = 0xFFD966 #yellow
+colorOrange = 0xE69138 #orange
+colorRed = 0xCC0000 #red
+colorWhite = 0x666666 #white
 
 # Get wifi details and more from a secrets.py file
 try:
@@ -53,7 +58,9 @@ panelName = "messagepanel"
 if (DEVICECONFIG == "LK"):
     panelName = "lkmessagepanel"
 
-MATRIX = Matrix(bit_depth=6)
+
+
+MATRIX = Matrix(bit_depth=2)
 DISPLAY = MATRIX.display
 ACCEL = adafruit_lis3dh.LIS3DH_I2C(busio.I2C(board.SCL, board.SDA),
                                    address=0x19)
@@ -65,20 +72,20 @@ DISPLAY.rotation = (int(((math.atan2(-ACCEL.acceleration.y,
 
 GROUP = displayio.Group()
 # 0 = main text
-GROUP.append(adafruit_display_text.label.Label(SMALL_FONT, color=0x666666, scale=1, text=DEVICECONFIG + ' starting...' ))
+GROUP.append(adafruit_display_text.label.Label(SMALL_FONT, color=colorWhite, scale=1, text=DEVICECONFIG + ' starting...' ))
 GROUP[0].x = 0
 GROUP[0].y = DISPLAY.height // 2 - 7
 
 # 1 = dot to display action
-GROUP.append(adafruit_display_text.label.Label(SMALL_FONT, color=0x0000FF, text='.'))
+GROUP.append(adafruit_display_text.label.Label(SMALL_FONT, color=colorRed, text='.'))
 
 # 2 = clock
-GROUP.append(adafruit_display_text.label.Label(SMALL_FONT, color=0x666666, scale=1, text='00:00'))
+GROUP.append(adafruit_display_text.label.Label(SMALL_FONT, color=colorWhite, scale=1, text='00:00'))
 GROUP[2].x = 37
 GROUP[2].y = 27
 
 # 2 = minutes lapsed
-GROUP.append(adafruit_display_text.label.Label(SMALL_FONT, color=0x666666, scale=1, text='00'))
+GROUP.append(adafruit_display_text.label.Label(SMALL_FONT, color=colorWhite, scale=1, text='00'))
 GROUP[3].x = 0
 GROUP[3].y = 27
 
@@ -88,19 +95,37 @@ prevMessage = ""
 minuteCounter = 0
 lastTimeUpdated = "00:00"
 
-def getWeather():
+def displayWeather():
     try:
-        wResp = wifi.get(secrets["weatherUrl"], headers={"X-AIO-KEY": secrets["aio_key"]} )
+        # get weather 
+        wResp = wifi.get(secrets["weatherAPIUrl"],
+                headers={"X-AIO-KEY": secrets["aio_key"]}, 
+            )
+        
+        # use only the current weather
         currentWeather = wResp.json()["current"]
         wResp.close()
         wResp = None
 
-        celsiusTemp = round((currentWeather["temperature"]-32)/1.8)
-
         print(currentWeather)
         GROUP[0].text = currentWeather["summary"]
-        GROUP[2].text = str(celsiusTemp) + "/" + str(round(currentWeather["temperature"]))
-        GROUP[3].text = "uv:"+ str(currentWeather["uvIndex"])
+        GROUP[2].text = ""
+
+        GROUP[3].text = str(currentWeather["temperature"]) + "F " + str(round(currentWeather["humidity"]*100)) + "% " + str(currentWeather["uvIndex"]) + "uv"
+
+        if (DEVICECONFIG == "DJ"):
+             # convert to celsius
+            celsiusTemp = round((currentWeather["temperature"]-32)/1.8)
+            GROUP[3].text = str(celsiusTemp) + "C " + str(round(currentWeather["humidity"]*100)) + "% " + str(currentWeather["uvIndex"]) + "uv"
+
+        if(currentWeather["temperature"] <= 60):
+            GROUP[3].color = colorBlue
+        if(currentWeather["temperature"] > 60 and currentWeather["temperature"] < 75):
+            GROUP[3].color = colorYellow
+        if(currentWeather["temperature"] >= 75 and currentWeather["temperature"] < 90):
+            GROUP[3].color = colorOrange
+        if(currentWeather["temperature"] >= 90):
+            GROUP[3].color = colorRed
         
     except (ValueError, RuntimeError) as e:
         print("Weather retrieve failed\n", e)        
@@ -111,11 +136,12 @@ while True:
     # Access time API
     print("Querying time...\n")
     GROUP[1].text = "."
-    GROUP[1].color = 0xFF0000 #red
+    GROUP[1].color = colorRed
+    GROUP[3].color = colorWhite
     currentTime = ""
 
     try:
-        clockResponse = wifi.get("https://io.adafruit.com/api/v2/time/ISO-8601")
+        clockResponse = wifi.get(secrets["adaTimeAPIUrl"])
         currentTime = clockResponse.text
         print(clockResponse.text)
         clockResponse.close()
@@ -133,6 +159,7 @@ while True:
     # Get current time and display
     timeUpdated = str(currentTime)[11:16]       
     GROUP[2].text = timeUpdated
+    GROUP[3].text = ""
 
     # Time is different? then at least one min passed
     if(lastTimeUpdated != timeUpdated):
@@ -146,7 +173,7 @@ while True:
 
     try:
         response = wifi.get(
-            "https://io.adafruit.com/api/v2/"
+            secrets["adaIOUrl"]
             + secrets["aio_username"]
             + "/feeds/" + panelName # feed name
             + "/data/last",
@@ -171,11 +198,14 @@ while True:
     # Get latest message 
     print("Updating screen...", end="")
     GROUP[1].text = "."
-    GROUP[1].color = 0xFFFFFF #white
+    GROUP[1].color = colorWhite #white
 
     # Display last message
     print("\n"+displayText)
     time.sleep(1)
+
+    if (displayText[0] == "["):
+        GROUP[0].color = colorRed
 
     # Review if last message is the same as a minute ago. If new message, reset the minuteCounter
     if(displayText != prevMessage):
@@ -213,10 +243,7 @@ while True:
     GROUP[0].scale = 1        
 
     #display the weather for 20 sec
-    getWeather()
+    displayWeather()
     time.sleep(20)
 
-
-
-    gc.collect()                
- 
+    
