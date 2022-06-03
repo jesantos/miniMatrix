@@ -1,6 +1,7 @@
 # Modified/adapted/start from: https://learn.adafruit.com/adafruit-matrixportal-m4
 
 import time
+import microcontroller
 import board
 import busio
 import supervisor
@@ -204,9 +205,6 @@ while True:
     print("\n"+displayText)
     time.sleep(1)
 
-    if (displayText[0] == "["):
-        GROUP[0].color = colorRed
-
     # Review if last message is the same as a minute ago. If new message, reset the minuteCounter
     if(displayText != prevMessage):
         prevMessage = displayText
@@ -225,7 +223,14 @@ while True:
     # Display the original text
     GROUP[0].scale = 2
     GROUP[0].x = scrollPos
+    GROUP[0].color = colorBlue
     GROUP[0].text = displayText
+
+    if (displayText[0] == "["):
+        GROUP[0].color = colorYellow
+
+    if (displayText[0] == "Video Call in Progress..."):
+        GROUP[0].color = colorOrange
 
     print("\nScroller: ")
     # scroll text to display 5 times
@@ -246,4 +251,5 @@ while True:
     displayWeather()
     time.sleep(20)
 
-    
+    if (timeUpdated == "23:00" or timeUpdated == "11:00"):
+        microcontroller.reset()
